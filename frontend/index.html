@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PrivacyLens</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background:#0b0f17; color:#e5e7eb; }
+    .card { background:#111827; border:1px solid #1f2937; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-5xl mx-auto px-4 py-8">
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold tracking-tight">PrivacyLens</h1>
+      <p class="text-gray-400 mt-1">Other tools ask you to trust them. We prove what left the file.</p>
+    </header>
+
+    <!-- Upload -->
+    <div class="card rounded-xl p-6 mb-6">
+      <div class="flex items-center gap-4">
+        <input id="file" type="file" accept=".pdf,.docx,.jpg,.jpeg,.png"
+               class="block text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white hover:file:bg-indigo-500" />
+        <button id="analyzeBtn" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium disabled:opacity-40">Analyze</button>
+      </div>
+      <p id="status" class="text-sm text-gray-400 mt-3"></p>
+    </div>
+
+    <!-- Findings -->
+    <div id="findingsCard" class="card rounded-xl p-6 mb-6 hidden">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="text-xl font-semibold">Findings <span id="findCount" class="text-gray-500 text-base"></span></h2>
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-gray-400">Sharing intent</label>
+          <select id="intent" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+            <option value="job_application">Job application</option>
+            <option value="public_sharing">Public sharing</option>
+            <option value="internal_sharing">Internal sharing</option>
+            <option value="legal_hold">Legal hold (blocks removal)</option>
+          </select>
+          <button id="sanitizeBtn" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-medium disabled:opacity-40">Sanitize &amp; verify</button>
+        </div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 mb-4 p-4 rounded-lg bg-gray-900/60 border border-gray-800">
+        <div>
+          <label class="block text-sm font-medium mb-1">Always redact these <span class="text-gray-500 font-normal">— things we can't guess</span></label>
+          <textarea id="customTerms" rows="3" placeholder="One per line, e.g.&#10;Project Zeus&#10;221B Baker Street" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm"></textarea>
+          <p class="text-xs text-gray-500 mt-1">These are removed no matter what. The tool still auto-detects the rest.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Redaction style</label>
+          <label class="flex items-center gap-2 text-sm mb-1"><input type="radio" name="style" value="token" checked> Replace with labels — <span class="font-mono text-indigo-300">[EMAIL]</span>, <span class="font-mono text-indigo-300">[PHONE]</span></label>
+          <label class="flex items-center gap-2 text-sm"><input type="radio" name="style" value="blackbox"> Black out — <span class="font-mono">████</span></label>
+        </div>
+      </div>
+      <div id="findings" class="space-y-2"></div>
+    </div>
+
+    <!-- Result -->
+    <div id="resultCard" class="card rounded-xl p-6 mb-6 hidden">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="text-xl font-semibold">Result</h2>
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-2 bg-gray-800/80 border border-gray-700 px-3 py-1.5 rounded-lg">
+            <label for="bulkDecisionSelect" class="text-xs text-gray-300 font-medium whitespace-nowrap">Change all:</label>
+            <select id="bulkDecisionSelect" class="bg-gray-900 border border-gray-600 rounded-md px-2 py-1 text-xs text-gray-100 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer">
+              <option value="" selected disabled>Select action…</option>
+              <option value="WARN">WARN</option>
+              <option value="KEEP">KEEP</option>
+              <option value="REMOVE">REMOVE</option>
+            </select>
+          </div>
+          <span id="judgeBadge" class="text-xs px-2 py-1 rounded-full border border-gray-700 text-gray-400"></span>
+          <button id="reapplyBtn" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 font-medium text-sm">Re-apply my decisions</button>
+          <a id="download" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium text-sm hidden" download>Download safe file</a>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mb-3">Intent sets each decision automatically. Use <span class="text-gray-300">Change all</span> or individual dropdowns, then click <span class="text-amber-400 font-medium">Re-apply my decisions</span> to override. Under <span class="text-gray-300">Legal hold</span>, removals stay blocked.</p>
+      <div id="result" class="space-y-2"></div>
+
+      <h3 class="text-lg font-semibold mt-6 mb-2">Coverage <span class="text-gray-500 text-sm font-normal">— what we did and did not check</span></h3>
+      <div id="coverage" class="grid sm:grid-cols-2 gap-2"></div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let sessionId = null;
+// When the page is opened directly as a file:// (no http origin), a relative URL
+// like "/analyze" can't be parsed. Fall back to the local server in that case.
+const API = (location.protocol === "file:" || location.origin === "null")
+  ? "http://localhost:8000" : "";
+
+const sevColor = {CRITICAL:"bg-red-500/20 text-red-300 border-red-500/40",
+                  HIGH:"bg-orange-500/20 text-orange-300 border-orange-500/40",
+                  MEDIUM:"bg-yellow-500/20 text-yellow-200 border-yellow-500/40",
+                  LOW:"bg-gray-500/20 text-gray-300 border-gray-500/40"};
+const decColor = {REMOVE:"bg-red-600/30 text-red-200", WARN:"bg-yellow-600/30 text-yellow-100", KEEP:"bg-emerald-600/30 text-emerald-100"};
+
+function badge(text, cls){ return `<span class="text-xs px-2 py-0.5 rounded-full border ${cls}">${text}</span>`; }
+
+function decisionSelect(f){
+  const opt = (v) => `<option value="${v}" ${f.decision===v?"selected":""}>${v}</option>`;
+  return `<select data-fid="${f.id}" class="decision bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs">
+    ${opt("KEEP")}${opt("WARN")}${opt("REMOVE")}</select>`;
+}
+
+function findingRow(f, showResult){
+  let right = "";
+  if (showResult){
+    let verified = "";
+    if (f.decision === "REMOVE"){
+      const isOcr = f.meta && f.meta.ocr;
+      const okTxt = isOcr ? "✓ OCR-verified (visual)" : "✓ byte-verified removed";
+      const noTxt = isOcr ? "✗ still legible" : "✗ still present";
+      verified = f.removed === true
+        ? badge(okTxt,"bg-emerald-600/30 text-emerald-100 border-emerald-500/40")
+        : (f.removed === false
+            ? badge(noTxt,"bg-red-600/40 text-red-100 border-red-500/50")
+            : badge("— not verified","border-gray-700 text-gray-400"));
+    }
+    right = `<div class="flex items-center gap-2 justify-end">${decisionSelect(f)} ${verified}</div>`;
+  }
+  const note = f.note ? `<div class="text-xs text-indigo-300 mt-1">Auditor: ${f.note}</div>` : "";
+  const desc = f.type_desc ? `<div class="text-xs text-gray-400 mt-1">${f.type_desc}</div>` : "";
+  return `<div class="flex items-start justify-between gap-3 p-3 rounded-lg bg-gray-900/60 border border-gray-800">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-sm font-semibold text-gray-100">${f.type_label || f.type}</span>
+        ${badge(f.severity, sevColor[f.severity]||"")}
+        <span class="text-xs px-2 py-0.5 rounded-full border border-gray-700 text-gray-400">${f.visibility}</span>
+      </div>
+      ${desc}
+      <div class="text-xs text-gray-500 mt-1 truncate">Found in ${f.location} · shown as “${f.value_preview || ""}”</div>
+      ${note}
+    </div>
+    <div class="text-right whitespace-nowrap">${right}</div>
+  </div>`;
+}
+
+$("analyzeBtn").onclick = async () => {
+  const file = $("file").files[0];
+  if (!file){ $("status").textContent = "Choose a file first."; return; }
+  $("status").textContent = "Analyzing locally…";
+  $("analyzeBtn").disabled = true;
+  try {
+    const fd = new FormData(); fd.append("file", file);
+    const r = await fetch(API + "/analyze", {method:"POST", body:fd});
+    if (!r.ok){ throw new Error((await r.json()).detail || r.statusText); }
+    const data = await r.json();
+    sessionId = data.session_id;
+    $("findCount").textContent = `(${data.findings.length})`;
+    $("findings").innerHTML = data.findings.map(f => findingRow(f, false)).join("");
+    $("findingsCard").classList.remove("hidden");
+    $("resultCard").classList.add("hidden");
+    $("status").textContent = `Found ${data.findings.length} item(s). The file has not left your machine.`;
+  } catch(e){ $("status").textContent = "Error: " + e.message; }
+  $("analyzeBtn").disabled = false;
+};
+
+async function runSanitize(overrides){
+  if (!sessionId) return;
+  $("sanitizeBtn").disabled = true;
+  $("status").textContent = "Sanitizing and verifying…";
+  try {
+    const body = {session_id: sessionId, intent: $("intent").value};
+    if (overrides) body.overrides = overrides;
+    body.style = (document.querySelector('input[name="style"]:checked')||{}).value || "token";
+    body.custom_terms = $("customTerms").value.split("\n").map(s=>s.trim()).filter(Boolean);
+    const r = await fetch(API + "/sanitize", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    if (!r.ok){ throw new Error((await r.json()).detail || r.statusText); }
+    const data = await r.json();
+    $("result").innerHTML = data.findings.map(f => findingRow(f, true)).join("");
+    $("coverage").innerHTML = data.coverage.map(c =>
+      `<div class="text-sm p-2 rounded-lg border ${c.checked ? 'border-emerald-800 bg-emerald-900/10' : 'border-yellow-800 bg-yellow-900/10'}">
+        <span class="${c.checked ? 'text-emerald-300' : 'text-yellow-300'}">${c.checked ? '✓ checked' : '✗ not checked'}</span>
+        <span class="text-gray-300"> — ${c.category}</span>
+        <div class="text-xs text-gray-500">${c.detail||""}</div>
+      </div>`).join("");
+    $("bulkDecisionSelect").value = "";
+    const dl = $("download");
+    dl.href = API + data.download_url; dl.classList.remove("hidden");
+    $("judgeBadge").textContent = data.judge.available ? "Remote audit: performed" : "Remote audit: not performed";
+    $("resultCard").classList.remove("hidden");
+    $("status").textContent = "Done. Removed items are marked byte-verified — not a checkmark we drew.";
+  } catch(e){ $("status").textContent = "Error: " + e.message; }
+  $("sanitizeBtn").disabled = false;
+}
+
+$("sanitizeBtn").onclick = () => runSanitize(null);
+$("reapplyBtn").onclick = () => {
+  const overrides = {};
+  document.querySelectorAll("#result select.decision").forEach(s => { overrides[s.dataset.fid] = s.value; });
+  runSanitize(overrides);
+};
+$("bulkDecisionSelect").onchange = (e) => {
+  const val = e.target.value;
+  if (!val) return;
+  const selects = document.querySelectorAll("#result select.decision");
+  selects.forEach(s => { s.value = val; });
+  $("status").textContent = `Changed all ${selects.length} entities to ${val}. Click "Re-apply my decisions" to apply.`;
+  const btn = $("reapplyBtn");
+  btn.classList.add("ring-2", "ring-amber-300");
+  setTimeout(() => btn.classList.remove("ring-2", "ring-amber-300"), 1800);
+};
+</script>
+</body>
+</html>
