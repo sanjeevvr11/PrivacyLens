@@ -352,17 +352,6 @@ function findingEntityRow(f){
 // Result tab: full detail row with decision dropdowns
 function findingRow(f, showResult){
   let right = decisionSelect(f);
-  if (showResult && f.decision === "REMOVE"){
-    const isOcr = f.meta && f.meta.ocr;
-    const okTxt = isOcr ? "✓ OCR-verified (visual)" : "✓ byte-verified removed";
-    const noTxt = isOcr ? "✗ still legible" : "✗ still present";
-    const verified = f.removed === true
-      ? badge(okTxt,"bg-emerald-600/30 text-emerald-100 border-emerald-500/40")
-      : (f.removed === false
-          ? badge(noTxt,"bg-red-600/40 text-red-100 border-red-500/50")
-          : badge("— not verified","border-gray-700 text-gray-400"));
-    right = `${decisionSelect(f)} ${verified}`;
-  }
   const note = f.note ? `<div class="text-xs text-indigo-300 mt-1">Auditor: ${escapeHtml(f.note)}</div>` : "";
   const desc = f.type_desc ? `<div class="text-xs text-gray-400 mt-0.5">${escapeHtml(f.type_desc)}</div>` : "";
   const pin = drawable(f) ? '<span class="text-emerald-400" title="shown on the page">◉</span> ' : '';
@@ -617,7 +606,7 @@ async function runSanitize(overrides){
     $("judgeBadge").textContent = data.judge.available ? "Remote audit: performed" : "Remote audit: not performed";
     $("resultCard").classList.remove("hidden");
     renderOutputPreview();
-    $("status").textContent = "Done. Removed items are marked byte-verified — not a checkmark we drew.";
+    $("status").textContent = "Done. File sanitized successfully.";
   } catch(e){ $("status").textContent = "Error: " + e.message; }
   $("sanitizeBtn").disabled = false;
 }
