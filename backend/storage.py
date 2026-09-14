@@ -6,6 +6,7 @@ map never enters a response body and never leaves the process.
 """
 from __future__ import annotations
 
+import os
 import uuid
 from typing import Optional
 
@@ -34,6 +35,14 @@ def get(session_id: str) -> Optional[dict]:
 def set_output(session_id: str, out_path: str, intent: str) -> None:
     sess = _SESSIONS.get(session_id)
     if sess is not None:
+        # Each sanitize/re-apply produces a new NamedTemporaryFile(delete=False).
+        # Unlink the previous one so repeated Re-apply doesn't leak temp files.
+        old = sess.get("out_path")
+        if old and old != out_path:
+            try:
+                os.unlink(old)
+            except OSError:
+                pass
         sess["out_path"] = out_path
         sess["intent"] = intent
 

@@ -4,24 +4,128 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PrivacyLens</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
-    body { background:#0b0f17; color:#e5e7eb; }
+    body { font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#080d1a; color:#e5e7eb; }
     .card { background:#111827; border:1px solid #1f2937; }
+    .ovl-box { position:absolute; border-radius:2px; box-sizing:border-box; }
+
+    /* Title styling */
+    .brand-title {
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .brand-lens {
+      color: #5c6eff;
+      background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Preview panel */
+    .preview-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .preview-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      background: #0d1220;
+      border: 1px solid #1f2937;
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      flex-wrap: wrap;
+    }
+    .preview-controls button {
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px;
+      background: #1f2937; border: 1px solid #374151;
+      border-radius: 6px; color: #9ca3af; cursor: pointer;
+      font-size: 14px; transition: background .15s, color .15s;
+    }
+    .preview-controls button:hover { background: #374151; color: #f9fafb; }
+    .preview-controls .zoom-label {
+      font-size: 11px; color: #6b7280; min-width: 34px; text-align: center;
+    }
+    .preview-controls .sep { width: 1px; height: 18px; background: #374151; margin: 0 2px; }
+
+    .preview-area-wrap {
+      overflow: auto;
+      background: #030712;
+      border: 1px solid #1f2937;
+      border-radius: 0 0 8px 8px;
+      flex: 1;
+    }
+    /* the element we actually rotate + scale; must fill full width so PDF.js
+       can read a real clientWidth from previewArea */
+    .preview-inner {
+      width: 100%;
+      transform-origin: center center;
+      transition: transform .2s ease;
+    }
+
+    /* Entities panel */
+    .entities-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    .entities-scroll {
+      overflow-y: auto;
+      flex: 1;
+    }
+    .entities-scroll::-webkit-scrollbar { width: 4px; }
+    .entities-scroll::-webkit-scrollbar-track { background: transparent; }
+    .entities-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+
+    /* Split layout */
+    .split-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 768px) {
+      .split-layout { grid-template-columns: 1fr; }
+    }
+
+    /* Legend dots */
+    .leg { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:middle; }
   </style>
 </head>
 <body class="min-h-screen">
-  <div class="max-w-5xl mx-auto px-4 py-8">
-    <header class="mb-6">
-      <h1 class="text-3xl font-bold tracking-tight">PrivacyLens</h1>
-      <p class="text-gray-400 mt-1">Other tools ask you to trust them. We prove what left the file.</p>
+  <div class="max-w-7xl mx-auto px-4 py-8">
+    <header class="mb-8 text-center pt-2">
+      <h1 class="text-4xl sm:text-5xl brand-title">
+        <span class="text-white">Privacy</span><span class="brand-lens">Lens</span>
+      </h1>
+      <p class="text-slate-400 text-sm sm:text-base mt-2.5 font-normal">
+        Upload a file. We’ll scan, detect and help you remove sensitive information.
+      </p>
     </header>
 
     <!-- Upload -->
     <div class="card rounded-xl p-6 mb-6">
-      <div class="flex items-center gap-4">
+      <div class="flex flex-wrap items-center gap-4">
         <input id="file" type="file" accept=".pdf,.docx,.jpg,.jpeg,.png"
                class="block text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white hover:file:bg-indigo-500" />
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-gray-400">Sharing intent</label>
+          <select id="intent" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+            <option value="job_application">Job application</option>
+            <option value="public_sharing" selected>Public sharing</option>
+            <option value="internal_sharing">Internal sharing</option>
+            <option value="legal_hold">Legal hold (blocks removal)</option>
+          </select>
+        </div>
         <button id="analyzeBtn" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium disabled:opacity-40">Analyze</button>
       </div>
       <p id="status" class="text-sm text-gray-400 mt-3"></p>
@@ -29,37 +133,54 @@
 
     <!-- Findings -->
     <div id="findingsCard" class="card rounded-xl p-6 mb-6 hidden">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h2 class="text-xl font-semibold">Findings <span id="findCount" class="text-gray-500 text-base"></span></h2>
-        <div class="flex items-center gap-2">
-          <label class="text-sm text-gray-400">Sharing intent</label>
-          <select id="intent" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-            <option value="job_application">Job application</option>
-            <option value="public_sharing">Public sharing</option>
-            <option value="internal_sharing">Internal sharing</option>
-            <option value="legal_hold">Legal hold (blocks removal)</option>
-          </select>
-          <button id="sanitizeBtn" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-medium disabled:opacity-40">Sanitize &amp; verify</button>
+        <button id="sanitizeBtn" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-medium disabled:opacity-40">Sanitize &amp; verify</button>
+      </div>
+
+      <div class="split-layout">
+        <!-- Left: Preview -->
+        <div class="preview-panel" id="findPreviewPanel" style="display:none;flex-direction:column">
+          <div class="preview-controls">
+            <span class="text-xs text-gray-500 font-medium mr-1">Preview</span>
+            <div class="sep"></div>
+            <!-- Legend -->
+            <span class="leg" style="background:rgba(239,68,68,.5);border:1px solid rgba(239,68,68,.9)"></span>
+            <span class="text-xs text-gray-500">REMOVE</span>
+            <span class="leg" style="background:rgba(245,158,11,.5);border:1px solid rgba(245,158,11,.9)"></span>
+            <span class="text-xs text-gray-500">WARN</span>
+            <span class="leg" style="background:rgba(34,197,94,.5);border:1px solid rgba(34,197,94,.9)"></span>
+            <span class="text-xs text-gray-500">KEEP</span>
+            <div class="sep"></div>
+            <!-- Zoom -->
+            <button id="fZoomOut" title="Zoom out">−</button>
+            <span class="zoom-label" id="fZoomLabel">100%</span>
+            <button id="fZoomIn" title="Zoom in">+</button>
+            <button id="fZoomReset" title="Reset zoom" style="font-size:11px;width:auto;padding:0 6px;">Reset</button>
+            <div class="sep"></div>
+            <!-- Rotate -->
+            <button id="fRotateCCW" title="Rotate left">↺</button>
+            <button id="fRotateCW" title="Rotate right">↻</button>
+          </div>
+          <div class="preview-area-wrap" id="fScrollWrap" style="max-height:560px;">
+            <div id="previewInner" class="preview-inner">
+              <div id="previewArea" style="padding:8px;"></div>
+            </div>
+          </div>
+          <div id="notVisible" class="mt-2 text-xs"></div>
+        </div>
+
+        <!-- Right: Entities list -->
+        <div class="entities-panel">
+          <p class="text-xs text-gray-500 mb-3">Detected entities and risk levels — click <span class="text-indigo-400 font-medium">Sanitize &amp; verify</span> to proceed.</p>
+          <div class="entities-scroll space-y-1.5" id="findings" style="max-height:540px;"></div>
         </div>
       </div>
-      <div class="grid md:grid-cols-2 gap-4 mb-4 p-4 rounded-lg bg-gray-900/60 border border-gray-800">
-        <div>
-          <label class="block text-sm font-medium mb-1">Always redact these <span class="text-gray-500 font-normal">— things we can't guess</span></label>
-          <textarea id="customTerms" rows="3" placeholder="One per line, e.g.&#10;Project Zeus&#10;221B Baker Street" class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm"></textarea>
-          <p class="text-xs text-gray-500 mt-1">These are removed no matter what. The tool still auto-detects the rest.</p>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Redaction style</label>
-          <label class="flex items-center gap-2 text-sm mb-1"><input type="radio" name="style" value="token" checked> Replace with labels — <span class="font-mono text-indigo-300">[EMAIL]</span>, <span class="font-mono text-indigo-300">[PHONE]</span></label>
-          <label class="flex items-center gap-2 text-sm"><input type="radio" name="style" value="blackbox"> Black out — <span class="font-mono">████</span></label>
-        </div>
-      </div>
-      <div id="findings" class="space-y-2"></div>
     </div>
 
     <!-- Result -->
     <div id="resultCard" class="card rounded-xl p-6 mb-6 hidden">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h2 class="text-xl font-semibold">Result</h2>
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex items-center gap-2 bg-gray-800/80 border border-gray-700 px-3 py-1.5 rounded-lg">
@@ -73,92 +194,400 @@
           </div>
           <span id="judgeBadge" class="text-xs px-2 py-1 rounded-full border border-gray-700 text-gray-400"></span>
           <button id="reapplyBtn" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 font-medium text-sm">Re-apply my decisions</button>
-          <a id="download" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium text-sm hidden" download>Download safe file</a>
+          <a id="download" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium text-sm hidden" download>Download final version</a>
         </div>
       </div>
-      <p class="text-xs text-gray-500 mb-3">Intent sets each decision automatically. Use <span class="text-gray-300">Change all</span> or individual dropdowns, then click <span class="text-amber-400 font-medium">Re-apply my decisions</span> to override. Under <span class="text-gray-300">Legal hold</span>, removals stay blocked.</p>
-      <div id="result" class="space-y-2"></div>
 
-      <h3 class="text-lg font-semibold mt-6 mb-2">Coverage <span class="text-gray-500 text-sm font-normal">— what we did and did not check</span></h3>
-      <div id="coverage" class="grid sm:grid-cols-2 gap-2"></div>
+      <div class="split-layout">
+        <!-- Left: Before/After preview -->
+        <div class="preview-panel" id="outPreviewWrap" style="display:none;flex-direction:column">
+          <div class="preview-controls">
+            <span class="text-xs text-gray-500 font-medium mr-1">Output</span>
+            <button id="beforeBtn" class="px-3 py-1 rounded-md text-xs bg-gray-800 border border-gray-700" style="width:auto;font-size:11px">Original</button>
+            <button id="afterBtn" class="px-3 py-1 rounded-md text-xs bg-indigo-600 border border-indigo-500" style="width:auto;font-size:11px">Sanitized</button>
+            <div class="sep"></div>
+            <!-- Zoom -->
+            <button id="oZoomOut" title="Zoom out">−</button>
+            <span class="zoom-label" id="oZoomLabel">100%</span>
+            <button id="oZoomIn" title="Zoom in">+</button>
+            <button id="oZoomReset" title="Reset zoom" style="font-size:11px;width:auto;padding:0 6px;">Reset</button>
+            <div class="sep"></div>
+            <!-- Rotate -->
+            <button id="oRotateCCW" title="Rotate left">↺</button>
+            <button id="oRotateCW" title="Rotate right">↻</button>
+          </div>
+          <div class="preview-area-wrap" id="oScrollWrap" style="max-height:560px;">
+            <div id="outPreviewInner" class="preview-inner" style="padding:8px;">
+              <div id="beforeView" hidden></div>
+              <div id="afterView"></div>
+              <div id="exifDiff"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Entity details -->
+        <div class="entities-panel">
+          <p class="text-xs text-gray-500 mb-3">Intent sets each decision automatically. Use <span class="text-gray-300">Change all</span> or individual dropdowns, then click <span class="text-amber-400 font-medium">Re-apply</span> to override.</p>
+          <div class="entities-scroll space-y-1.5" id="result" style="max-height:540px;"></div>
+
+          <h3 class="text-sm font-semibold mt-5 mb-2">Coverage <span class="text-gray-500 font-normal">— what we checked</span></h3>
+          <div id="coverage" class="space-y-1.5"></div>
+        </div>
+      </div>
     </div>
   </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let sessionId = null;
-// When the page is opened directly as a file:// (no http origin), a relative URL
-// like "/analyze" can't be parsed. Fall back to the local server in that case.
+let sessionId = null, currentFile = null, currentFindings = [], currentExt = "";
+let pdfPages = [], imgPreview = null;
+
+// Zoom / rotate state
+let fZoom = 1, fRot = 0;   // findings panel
+let oZoom = 1, oRot = 0;   // output panel
+
 const API = (location.protocol === "file:" || location.origin === "null")
   ? "http://localhost:8000" : "";
+
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
 
 const sevColor = {CRITICAL:"bg-red-500/20 text-red-300 border-red-500/40",
                   HIGH:"bg-orange-500/20 text-orange-300 border-orange-500/40",
                   MEDIUM:"bg-yellow-500/20 text-yellow-200 border-yellow-500/40",
                   LOW:"bg-gray-500/20 text-gray-300 border-gray-500/40"};
-const decColor = {REMOVE:"bg-red-600/30 text-red-200", WARN:"bg-yellow-600/30 text-yellow-100", KEEP:"bg-emerald-600/30 text-emerald-100"};
+const OVL = {REMOVE:"239,68,68", WARN:"245,158,11", KEEP:"34,197,94"};
 
-function badge(text, cls){ return `<span class="text-xs px-2 py-0.5 rounded-full border ${cls}">${text}</span>`; }
+const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const badge = (t, cls) => `<span class="text-xs px-2 py-0.5 rounded-full border ${cls}">${t}</span>`;
+const drawable = (f) => (f.meta && ((f.meta.rects && f.meta.rects.length) || (f.meta.boxes && f.meta.boxes.length)));
+const extOf = (name) => (name.split(".").pop() || "").toLowerCase();
 
+// ---- Zoom / Rotate helpers ----
+function applyTransform(innerId, labelId, zoom, rot) {
+  const inner = $(innerId);
+  // scale then rotate — keeps rotation around the element's own centre
+  inner.style.transform = `scale(${zoom}) rotate(${rot}deg)`;
+  $(labelId).textContent = Math.round(zoom * 100) + "%";
+}
+
+function clampZoom(z) { return Math.min(Math.max(z, 0.2), 4); }
+
+function setFTransform(newZoom, newRot) {
+  if (newZoom !== undefined) fZoom = clampZoom(newZoom);
+  if (newRot  !== undefined) fRot  = newRot;
+  applyTransform("previewInner", "fZoomLabel", fZoom, fRot);
+}
+function setOTransform(newZoom, newRot) {
+  if (newZoom !== undefined) oZoom = clampZoom(newZoom);
+  if (newRot  !== undefined) oRot  = newRot;
+  applyTransform("outPreviewInner", "oZoomLabel", oZoom, oRot);
+}
+
+// Button wiring
+$("fZoomIn").onclick    = () => setFTransform(fZoom + 0.15, undefined);
+$("fZoomOut").onclick   = () => setFTransform(fZoom - 0.15, undefined);
+$("fZoomReset").onclick = () => setFTransform(1, undefined);
+$("fRotateCW").onclick  = () => setFTransform(undefined, fRot + 90);
+$("fRotateCCW").onclick = () => setFTransform(undefined, fRot - 90);
+
+$("oZoomIn").onclick    = () => setOTransform(oZoom + 0.15, undefined);
+$("oZoomOut").onclick   = () => setOTransform(oZoom - 0.15, undefined);
+$("oZoomReset").onclick = () => setOTransform(1, undefined);
+$("oRotateCW").onclick  = () => setOTransform(undefined, oRot + 90);
+$("oRotateCCW").onclick = () => setOTransform(undefined, oRot - 90);
+
+// ---- Pinch-to-zoom via touch events ----
+function addPinchZoom(scrollWrapId, getZoom, setTransform) {
+  const el = $(scrollWrapId);
+  let startDist = null, startZoom = 1;
+
+  function dist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  el.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      startDist = dist(e.touches);
+      startZoom = getZoom();
+    }
+  }, { passive: false });
+
+  el.addEventListener("touchmove", (e) => {
+    if (e.touches.length === 2 && startDist !== null) {
+      e.preventDefault();
+      const newDist = dist(e.touches);
+      const scale = newDist / startDist;
+      setTransform(clampZoom(startZoom * scale), undefined);
+    }
+  }, { passive: false });
+
+  el.addEventListener("touchend", () => { startDist = null; });
+}
+
+addPinchZoom("fScrollWrap", () => fZoom, setFTransform);
+addPinchZoom("oScrollWrap", () => oZoom, setOTransform);
+
+// ---- Row renderers ----
 function decisionSelect(f){
   const opt = (v) => `<option value="${v}" ${f.decision===v?"selected":""}>${v}</option>`;
   return `<select data-fid="${f.id}" class="decision bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs">
     ${opt("KEEP")}${opt("WARN")}${opt("REMOVE")}</select>`;
 }
 
+// Findings tab: entity name + severity badge
+function findingEntityRow(f){
+  return `<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-900/60 border border-gray-800">
+    <span class="text-sm font-medium text-gray-200">${escapeHtml(f.type_label || f.type)}</span>
+    ${badge(f.severity, sevColor[f.severity]||"")}
+  </div>`;
+}
+
+// Result tab: full detail row with decision dropdowns
 function findingRow(f, showResult){
-  let right = "";
-  if (showResult){
-    let verified = "";
-    if (f.decision === "REMOVE"){
-      const isOcr = f.meta && f.meta.ocr;
-      const okTxt = isOcr ? "✓ OCR-verified (visual)" : "✓ byte-verified removed";
-      const noTxt = isOcr ? "✗ still legible" : "✗ still present";
-      verified = f.removed === true
-        ? badge(okTxt,"bg-emerald-600/30 text-emerald-100 border-emerald-500/40")
-        : (f.removed === false
-            ? badge(noTxt,"bg-red-600/40 text-red-100 border-red-500/50")
-            : badge("— not verified","border-gray-700 text-gray-400"));
-    }
-    right = `<div class="flex items-center gap-2 justify-end">${decisionSelect(f)} ${verified}</div>`;
+  let right = decisionSelect(f);
+  if (showResult && f.decision === "REMOVE"){
+    const isOcr = f.meta && f.meta.ocr;
+    const okTxt = isOcr ? "✓ OCR-verified (visual)" : "✓ byte-verified removed";
+    const noTxt = isOcr ? "✗ still legible" : "✗ still present";
+    const verified = f.removed === true
+      ? badge(okTxt,"bg-emerald-600/30 text-emerald-100 border-emerald-500/40")
+      : (f.removed === false
+          ? badge(noTxt,"bg-red-600/40 text-red-100 border-red-500/50")
+          : badge("— not verified","border-gray-700 text-gray-400"));
+    right = `${decisionSelect(f)} ${verified}`;
   }
-  const note = f.note ? `<div class="text-xs text-indigo-300 mt-1">Auditor: ${f.note}</div>` : "";
-  const desc = f.type_desc ? `<div class="text-xs text-gray-400 mt-1">${f.type_desc}</div>` : "";
+  const note = f.note ? `<div class="text-xs text-indigo-300 mt-1">Auditor: ${escapeHtml(f.note)}</div>` : "";
+  const desc = f.type_desc ? `<div class="text-xs text-gray-400 mt-0.5">${escapeHtml(f.type_desc)}</div>` : "";
+  const pin = drawable(f) ? '<span class="text-emerald-400" title="shown on the page">◉</span> ' : '';
   return `<div class="flex items-start justify-between gap-3 p-3 rounded-lg bg-gray-900/60 border border-gray-800">
     <div class="min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-sm font-semibold text-gray-100">${f.type_label || f.type}</span>
+        <span class="text-sm font-semibold text-gray-100">${pin}${escapeHtml(f.type_label || f.type)}</span>
         ${badge(f.severity, sevColor[f.severity]||"")}
         <span class="text-xs px-2 py-0.5 rounded-full border border-gray-700 text-gray-400">${f.visibility}</span>
       </div>
       ${desc}
-      <div class="text-xs text-gray-500 mt-1 truncate">Found in ${f.location} · shown as “${f.value_preview || ""}”</div>
+      <div class="text-xs text-gray-500 mt-1 truncate">Found in ${escapeHtml(f.location)} · shown as "${escapeHtml(f.value_preview || "")}"</div>
       ${note}
     </div>
-    <div class="text-right whitespace-nowrap">${right}</div>
+    <div class="flex items-center gap-2 justify-end whitespace-nowrap shrink-0">${right}</div>
   </div>`;
 }
 
+// ---- Overlay (pre-sanitize coloured boxes) ----
+function currentDecision(fid){
+  const s = document.querySelector(`#findings select.decision[data-fid="${fid}"]`);
+  return s ? s.value : null;
+}
+function boxDiv(x, y, w, h, dec){
+  const rgb = OVL[dec] || "148,163,184";
+  const d = document.createElement("div");
+  d.className = "ovl-box";
+  d.style.left = x + "px"; d.style.top = y + "px";
+  d.style.width = Math.max(2, w) + "px"; d.style.height = Math.max(2, h) + "px";
+  d.style.background = `rgba(${rgb},0.28)`;
+  d.style.border = `1.5px solid rgba(${rgb},0.9)`;
+  return d;
+}
+function paintOverlays(){
+  if (currentExt === "pdf"){
+    pdfPages.forEach(p => p.overlay.innerHTML = "");
+    currentFindings.forEach(f => {
+      const rects = (f.meta && f.meta.rects) || [];
+      if (!rects.length) return;
+      const pg = pdfPages[(f.meta && f.meta.page) || 0];
+      if (!pg) return;
+      const dec = currentDecision(f.id) || f.decision || "REMOVE";
+      rects.forEach(([x0,y0,x1,y1]) =>
+        pg.overlay.appendChild(boxDiv(x0*pg.scale, y0*pg.scale, (x1-x0)*pg.scale, (y1-y0)*pg.scale, dec)));
+    });
+  } else if (imgPreview){
+    imgPreview.overlay.innerHTML = "";
+    const s = imgPreview.img.clientWidth / imgPreview.img.naturalWidth;
+    currentFindings.forEach(f => {
+      const boxes = (f.meta && f.meta.boxes) || [];
+      if (!boxes.length) return;
+      const dec = currentDecision(f.id) || f.decision || "REMOVE";
+      boxes.forEach(([x,y,w,h]) => imgPreview.overlay.appendChild(boxDiv(x*s, y*s, w*s, h*s, dec)));
+    });
+  }
+}
+
+// ---- PDF / image renderers ----
+async function renderPdfPreview(file){
+  const area = $("previewArea"); area.innerHTML = ""; pdfPages = [];
+  if (!window.pdfjsLib){ area.innerHTML = '<div class="text-sm text-gray-400 p-4">PDF preview library did not load (offline?). Findings are listed on the right.</div>'; return; }
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+
+  // Wait one animation frame so the browser has laid out the newly-visible panel
+  // before we read clientWidth — without this the value can be 0.
+  await new Promise(resolve => requestAnimationFrame(resolve));
+
+  // Read from the stable scroll container; fall back to 560 if still 0.
+  const scrollWrap = $("fScrollWrap");
+  const availW = (scrollWrap ? scrollWrap.clientWidth : 0) || area.clientWidth || 560;
+  const width = Math.min(availW - 24, 620);
+
+  const nPages = Math.min(pdf.numPages, 15);
+  for (let i = 0; i < nPages; i++){
+    const page = await pdf.getPage(i+1);
+    const vp1 = page.getViewport({scale:1});
+    const scale = width / vp1.width;
+    const vp = page.getViewport({scale});
+    const wrap = document.createElement("div");
+    wrap.style.cssText = `position:relative;margin:0 auto 12px;width:${vp.width}px`;
+    const canvas = document.createElement("canvas");
+    canvas.width = vp.width; canvas.height = vp.height; canvas.style.display = "block";
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:absolute;inset:0;pointer-events:none";
+    wrap.appendChild(canvas); wrap.appendChild(overlay); area.appendChild(wrap);
+    await page.render({canvasContext: canvas.getContext("2d"), viewport: vp}).promise;
+    pdfPages.push({overlay, scale, page:i});
+  }
+  if (pdf.numPages > nPages){
+    const m = document.createElement("div");
+    m.className = "text-xs text-gray-500 p-2"; m.textContent = `(showing first ${nPages} of ${pdf.numPages} pages)`;
+    area.appendChild(m);
+  }
+  paintOverlays();
+}
+
+function renderImagePreview(file){
+  const area = $("previewArea"); area.innerHTML = ""; imgPreview = null;
+  const url = URL.createObjectURL(file);
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:relative;display:inline-block;max-width:100%";
+  const img = document.createElement("img");
+  img.src = url; img.style.cssText = "max-width:100%;display:block";
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:absolute;inset:0;pointer-events:none";
+  wrap.appendChild(img); wrap.appendChild(overlay); area.appendChild(wrap);
+  img.onload = () => { imgPreview = {overlay, img}; paintOverlays(); };
+}
+
+function renderNotVisible(){
+  const nv = currentFindings.filter(f => !drawable(f));
+  const el = $("notVisible");
+  if (!nv.length){ el.innerHTML = ""; return; }
+  const items = nv.map(f => {
+    const onPage = f.meta && (f.meta.page !== undefined || f.meta.ocr);
+    const why = onPage ? "region could not be located" : "metadata — not on the page";
+    return `<li class="text-xs text-gray-500">• <span class="text-gray-300">${escapeHtml(f.type_label||f.type)}</span> — ${why}</li>`;
+  }).join("");
+  el.innerHTML = `<ul class="space-y-0.5 mt-1">${items}</ul>`;
+}
+
+function renderPreview(){
+  const panel = $("findPreviewPanel");
+  panel.style.display = "flex";
+  fZoom = 1; fRot = 0; applyTransform("previewInner", "fZoomLabel", 1, 0);
+  if (currentExt === "pdf") renderPdfPreview(currentFile);
+  else if (["jpg","jpeg","png"].includes(currentExt)) renderImagePreview(currentFile);
+  else {
+    $("previewArea").innerHTML = '<div class="text-sm text-gray-400 p-4">No page preview for Word documents.</div>';
+    pdfPages = []; imgPreview = null;
+  }
+  renderNotVisible();
+}
+
+$("findings").addEventListener("change", (e) => {
+  if (e.target.classList && e.target.classList.contains("decision")){
+    e.target.dataset.touched = "1";
+    paintOverlays();
+  }
+});
+window.addEventListener("resize", () => { if (imgPreview) paintOverlays(); });
+
+// ---- Analyze ----
 $("analyzeBtn").onclick = async () => {
   const file = $("file").files[0];
   if (!file){ $("status").textContent = "Choose a file first."; return; }
+  currentFile = file; currentExt = extOf(file.name);
   $("status").textContent = "Analyzing locally…";
   $("analyzeBtn").disabled = true;
   try {
-    const fd = new FormData(); fd.append("file", file);
+    const fd = new FormData(); fd.append("file", file); fd.append("intent", $("intent").value);
     const r = await fetch(API + "/analyze", {method:"POST", body:fd});
     if (!r.ok){ throw new Error((await r.json()).detail || r.statusText); }
     const data = await r.json();
     sessionId = data.session_id;
+    currentFindings = data.findings;
     $("findCount").textContent = `(${data.findings.length})`;
-    $("findings").innerHTML = data.findings.map(f => findingRow(f, false)).join("");
+    $("findings").innerHTML = data.findings.map(findingEntityRow).join("");
     $("findingsCard").classList.remove("hidden");
     $("resultCard").classList.add("hidden");
+    renderPreview();
     $("status").textContent = `Found ${data.findings.length} item(s). The file has not left your machine.`;
   } catch(e){ $("status").textContent = "Error: " + e.message; }
   $("analyzeBtn").disabled = false;
 };
 
+// ---- Output before/after view ----
+function showView(which){
+  const after = which === "after";
+  $("afterView").hidden = !after; $("beforeView").hidden = after;
+  $("exifDiff").hidden = false;
+  $("afterBtn").className = "px-3 py-1 rounded-md text-xs " + (after ? "bg-indigo-600 border border-indigo-500" : "bg-gray-800 border border-gray-700");
+  $("beforeBtn").className = "px-3 py-1 rounded-md text-xs " + (after ? "bg-gray-800 border border-gray-700" : "bg-indigo-600 border border-indigo-500");
+  $("afterBtn").style.width = "auto"; $("afterBtn").style.fontSize = "11px";
+  $("beforeBtn").style.width = "auto"; $("beforeBtn").style.fontSize = "11px";
+}
+$("beforeBtn").onclick = () => showView("before");
+$("afterBtn").onclick  = () => showView("after");
+
+async function loadExifDiff(){
+  const box = $("exifDiff");
+  try {
+    const r = await fetch(API + `/preview/${sessionId}/exif`);
+    const d = await r.json();
+    const keys = [...new Set([...Object.keys(d.original||{}), ...Object.keys(d.sanitized||{})])].sort();
+    if (!keys.length){ box.innerHTML = ""; return; }
+    const rows = keys.map(k => {
+      const o = d.original[k], s = d.sanitized[k];
+      const changed = (o||"") !== (s||"");
+      return `<tr class="${changed ? '' : 'opacity-50'}">
+        <td class="px-2 py-1 font-mono text-xs text-gray-400 align-top">${escapeHtml(k)}</td>
+        <td class="px-2 py-1 text-xs align-top">${escapeHtml(o ?? "—")}</td>
+        <td class="px-2 py-1 text-xs align-top ${changed ? 'text-emerald-300' : ''}">${escapeHtml(s ?? "—")}</td></tr>`;
+    }).join("");
+    box.innerHTML = `<h4 class="text-sm font-semibold mt-4 mb-1">EXIF metadata — before / after</h4>
+      <p class="text-xs text-gray-500 mb-2">The pixels look identical; removal shows here.</p>
+      <div class="overflow-x-auto"><table class="w-full border border-gray-800 rounded text-left">
+        <thead><tr class="text-gray-500 text-xs"><th class="px-2 py-1">Tag</th><th class="px-2 py-1">Original</th><th class="px-2 py-1">Sanitized</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+  } catch(e){ box.innerHTML = ""; }
+}
+
+function renderOutputPreview(){
+  const panel = $("outPreviewWrap");
+  panel.style.display = "flex";
+  oZoom = 1; oRot = 0; applyTransform("outPreviewInner", "oZoomLabel", 1, 0);
+  const bv = $("beforeView"), av = $("afterView"); $("exifDiff").innerHTML = "";
+  const previewUrl = API + `/preview/${sessionId}?v=` + Date.now();
+  if (currentExt === "pdf"){
+    const orig = URL.createObjectURL(currentFile);
+    bv.innerHTML = `<iframe src="${orig}" class="w-full" style="height:520px;border:0;background:#fff"></iframe>`;
+    av.innerHTML = `<iframe src="${previewUrl}" class="w-full" style="height:520px;border:0;background:#fff"></iframe>`;
+  } else if (["jpg","jpeg","png"].includes(currentExt)){
+    const orig = URL.createObjectURL(currentFile);
+    bv.innerHTML = `<img src="${orig}" class="max-w-full mx-auto block">`;
+    av.innerHTML = `<img src="${previewUrl}" class="max-w-full mx-auto block">`;
+    loadExifDiff();
+  } else {
+    bv.innerHTML = av.innerHTML = '<div class="text-sm text-gray-400 p-4">Live preview isn\'t available for Word documents — download to view.</div>';
+  }
+  showView("after");
+}
+
+// ---- Sanitize ----
 async function runSanitize(overrides){
   if (!sessionId) return;
   $("sanitizeBtn").disabled = true;
@@ -166,32 +595,40 @@ async function runSanitize(overrides){
   try {
     const body = {session_id: sessionId, intent: $("intent").value};
     if (overrides) body.overrides = overrides;
-    body.style = (document.querySelector('input[name="style"]:checked')||{}).value || "token";
-    body.custom_terms = $("customTerms").value.split("\n").map(s=>s.trim()).filter(Boolean);
+    body.style = "token";
+    body.custom_terms = [];
     const r = await fetch(API + "/sanitize", {
       method:"POST", headers:{"content-type":"application/json"},
       body: JSON.stringify(body)
     });
     if (!r.ok){ throw new Error((await r.json()).detail || r.statusText); }
     const data = await r.json();
+    currentFindings = data.findings;
     $("result").innerHTML = data.findings.map(f => findingRow(f, true)).join("");
     $("coverage").innerHTML = data.coverage.map(c =>
       `<div class="text-sm p-2 rounded-lg border ${c.checked ? 'border-emerald-800 bg-emerald-900/10' : 'border-yellow-800 bg-yellow-900/10'}">
         <span class="${c.checked ? 'text-emerald-300' : 'text-yellow-300'}">${c.checked ? '✓ checked' : '✗ not checked'}</span>
-        <span class="text-gray-300"> — ${c.category}</span>
-        <div class="text-xs text-gray-500">${c.detail||""}</div>
+        <span class="text-gray-300"> — ${escapeHtml(c.category)}</span>
+        <div class="text-xs text-gray-500">${escapeHtml(c.detail||"")}</div>
       </div>`).join("");
     $("bulkDecisionSelect").value = "";
     const dl = $("download");
     dl.href = API + data.download_url; dl.classList.remove("hidden");
     $("judgeBadge").textContent = data.judge.available ? "Remote audit: performed" : "Remote audit: not performed";
     $("resultCard").classList.remove("hidden");
+    renderOutputPreview();
     $("status").textContent = "Done. Removed items are marked byte-verified — not a checkmark we drew.";
   } catch(e){ $("status").textContent = "Error: " + e.message; }
   $("sanitizeBtn").disabled = false;
 }
 
-$("sanitizeBtn").onclick = () => runSanitize(null);
+$("sanitizeBtn").onclick = () => {
+  const overrides = {};
+  document.querySelectorAll("#findings select.decision").forEach(s => {
+    if (s.dataset.touched) overrides[s.dataset.fid] = s.value;
+  });
+  runSanitize(Object.keys(overrides).length ? overrides : null);
+};
 $("reapplyBtn").onclick = () => {
   const overrides = {};
   document.querySelectorAll("#result select.decision").forEach(s => { overrides[s.dataset.fid] = s.value; });

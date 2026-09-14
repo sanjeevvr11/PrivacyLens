@@ -14,7 +14,7 @@ import tempfile
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -56,7 +56,7 @@ def _finding_dict(f) -> dict:
         "decision": f.decision,
         "removed": f.removed,
         "note": f.note,
-        "meta": {k: v for k, v in f.meta.items() if k in ("page", "rects", "part", "ocr")},
+        "meta": {k: v for k, v in f.meta.items() if k in ("page", "rects", "boxes", "part", "ocr")},
     }
 
 
@@ -65,7 +65,7 @@ def _coverage_dict(c) -> dict:
 
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
+async def analyze(file: UploadFile = File(...), intent: str = Form("public_sharing")):
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ANALYZERS:
         raise HTTPException(400, f"Unsupported file type: {ext or '(none)'}")
@@ -88,6 +88,12 @@ async def analyze(file: UploadFile = File(...)):
         t = tok.token(f.type, secrets.get(f.id, ""))
         if t:
             f.value_preview = t
+
+    # Seed each finding with a preview decision so the pre-sanitize overlay can colour
+    # regions by KEEP/WARN/REMOVE. /sanitize recomputes decisions from the real intent.
+    if intent not in VALID_INTENTS:
+        intent = "public_sharing"
+    decide(findings, intent)
 
     session_id = storage.create(tmp.name, ext, findings, secrets, name=file.filename or "file")
     return {"session_id": session_id, "findings": [_finding_dict(f) for f in findings]}
@@ -171,6 +177,60 @@ async def download(session_id: str):
         raise HTTPException(404, "No sanitized file for this session")
     name = sess.get("name") or "file"
     return FileResponse(sess["out_path"], filename=f"sanitized_{name}")
+
+
+_MEDIA_TYPES = {".pdf": "application/pdf", ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg", ".png": "image/png"}
+
+
+@app.get("/preview/{session_id}")
+async def preview(session_id: str):
+    """Same sanitized bytes as /download, but served INLINE (no filename= => the
+    Content-Disposition is inline) so a browser can render it in an iframe/<img>."""
+    sess = storage.get(session_id)
+    if sess is None or not sess.get("out_path"):
+        raise HTTPException(404, "No sanitized file for this session")
+    ext = sess.get("ext", "")
+    return FileResponse(sess["out_path"], media_type=_MEDIA_TYPES.get(ext, "application/octet-stream"))
+
+
+def _flat_exif(path: str) -> dict:
+    """Flatten readable EXIF tags to {ifd/TagName: value}. Never returns raw thumbnail
+    bytes (shown as a size) — and this is metadata, not document PII."""
+    try:
+        import piexif
+    except Exception:
+        return {}
+    try:
+        data = piexif.load(path)
+    except Exception:
+        return {}
+    out = {}
+    for ifd in ("0th", "Exif", "GPS", "1st"):
+        for tag, val in (data.get(ifd) or {}).items():
+            try:
+                name = piexif.TAGS[ifd][tag]["name"]
+            except Exception:
+                name = str(tag)
+            if isinstance(val, bytes):
+                val = val.decode("latin-1", "ignore").rstrip("\x00")
+            out[f"{ifd}/{name}"] = str(val)[:120]
+    thumb = data.get("thumbnail")
+    if thumb:
+        out["thumbnail"] = f"<embedded JPEG, {len(thumb)} bytes>"
+    return out
+
+
+@app.get("/preview/{session_id}/exif")
+async def preview_exif(session_id: str):
+    """Original vs sanitized EXIF tag tables — the useful before/after for images,
+    since GPS/thumbnail removal is invisible in the pixels."""
+    sess = storage.get(session_id)
+    if sess is None:
+        raise HTTPException(404, "Unknown session")
+    original = _flat_exif(sess["path"])
+    sanitized = _flat_exif(sess["out_path"]) if sess.get("out_path") else {}
+    return {"original": original, "sanitized": sanitized}
 
 
 # Static frontend last, so API routes take precedence.
