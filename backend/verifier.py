@@ -66,6 +66,8 @@ def verify(path: str, findings, secrets: dict):
     for f in findings:
         if f.decision != "REMOVE":
             continue
+        if f.meta.get("ocr"):
+            continue  # OCR/pixel findings are verified by re-OCR, not byte search
         raw_val = secrets.get(f.id)
         if raw_val is None:
             f.removed = None

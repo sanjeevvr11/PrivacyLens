@@ -15,6 +15,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -28,6 +29,14 @@ from .models import IdGen, Tokenizer, type_info
 from .policy.engine import VALID_INTENTS, apply_overrides, decide
 
 app = FastAPI(title="PrivacyLens")
+
+# Allow the page to call the API even when opened as a local file:// (origin "null").
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 
@@ -47,7 +56,7 @@ def _finding_dict(f) -> dict:
         "decision": f.decision,
         "removed": f.removed,
         "note": f.note,
-        "meta": {k: v for k, v in f.meta.items() if k in ("page", "rects", "part")},
+        "meta": {k: v for k, v in f.meta.items() if k in ("page", "rects", "part", "ocr")},
     }
 
 
@@ -127,8 +136,11 @@ async def sanitize(req: SanitizeRequest):
     # 2. COMPILE -> fresh container
     out_path = COMPILERS[ext].compile(sess["path"], findings, secrets, style)
 
-    # 3. VERIFY (independent, byte-level)
+    # 3. VERIFY (independent, byte-level; OCR findings verified separately by re-OCR)
     verifier.verify(out_path, findings, secrets)
+    if ext in (".jpg", ".jpeg", ".png"):
+        from .analyzers import image_ocr
+        image_ocr.verify_visual(out_path, findings, secrets)
 
     # 4. COVERAGE (generated)
     cov = coverage.build(ext)

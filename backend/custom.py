@@ -83,10 +83,26 @@ def _docx(path, terms, ids):
 def _image(path, terms, ids):
     findings, secrets = [], {}
     raw = open(path, "rb").read()
+
+    # Prefer OCR: locate the term in the PIXELS so it can be blacked out and re-OCR
+    # verified. Fall back to metadata-byte presence only if OCR can't place it.
+    from .analyzers import image_ocr
+    words = None
+    if image_ocr.available():
+        try:
+            words = image_ocr._words(path)
+        except Exception:
+            words = None
+
     for term in terms:
-        present = term.encode("utf-8") in raw or term.encode("latin-1", "ignore") in raw
+        boxes = image_ocr._boxes_for(term, words) if words else []
         fid = ids.next()
-        findings.append(_mk(fid, "image:metadata", "recoverable" if present else "hidden", term))
+        if boxes:
+            findings.append(_mk(fid, "image:printed", "visible", term,
+                                meta={"ocr": True, "boxes": boxes}))
+        else:
+            present = term.encode("utf-8") in raw or term.encode("latin-1", "ignore") in raw
+            findings.append(_mk(fid, "image:metadata", "recoverable" if present else "hidden", term))
         secrets[fid] = term
     return findings, secrets
 

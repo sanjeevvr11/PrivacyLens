@@ -9,3 +9,4 @@ python-stdnum==1.20
 PyYAML==6.0.2
 requests==2.32.3
 python-dotenv==1.0.1
+pytesseract==0.3.13   # optional OCR for scanned images; also needs the tesseract binary

@@ -9,6 +9,7 @@ exact bytes are gone from the output.
 from __future__ import annotations
 
 from ..models import CoverageItem, Finding, IdGen, mask, sha256_hex
+from . import image_ocr
 
 try:
     import piexif
@@ -42,7 +43,7 @@ def _to_deg(value, ref) -> float:
     return result
 
 
-def analyze(path: str, ids: IdGen) -> tuple[list[Finding], dict[str, str]]:
+def _analyze_exif(path: str, ids: IdGen) -> tuple[list[Finding], dict[str, str]]:
     findings: list[Finding] = []
     secrets: dict[str, str] = {}
     if piexif is None:
@@ -89,6 +90,15 @@ def analyze(path: str, ids: IdGen) -> tuple[list[Finding], dict[str, str]]:
     return findings, secrets
 
 
+def analyze(path: str, ids: IdGen) -> tuple[list[Finding], dict[str, str]]:
+    """EXIF metadata + optional OCR text (printed names / IDs on scanned images)."""
+    findings, secrets = _analyze_exif(path, ids)
+    of, osec = image_ocr.analyze_image_text(path, ids)
+    findings.extend(of)
+    secrets.update(osec)
+    return findings, secrets
+
+
 def coverage() -> list[CoverageItem]:
     return [
         CoverageItem("image.exif_gps", True, "GPS latitude/longitude IFD"),
@@ -99,6 +109,10 @@ def coverage() -> list[CoverageItem]:
         CoverageItem("image.xmp", True, "XMP packet removed by full re-encode"),
         CoverageItem("image.icc_profile", True, "ICC colour profile removed by full re-encode"),
         CoverageItem("image.iptc", True, "IPTC metadata removed by full re-encode"),
+        CoverageItem("image.printed_text", image_ocr.available(),
+                     "printed text (names, IDs, numbers) via OCR — visual redaction"
+                     if image_ocr.available()
+                     else "OCR off — run: pip install pytesseract (and install the tesseract binary)"),
         CoverageItem("image.steganography", False,
                      "data hidden in pixel values is undetectable by design — no tool can "
                      "verify its absence"),

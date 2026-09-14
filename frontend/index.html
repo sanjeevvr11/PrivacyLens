@@ -87,6 +87,10 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let sessionId = null;
+// When the page is opened directly as a file:// (no http origin), a relative URL
+// like "/analyze" can't be parsed. Fall back to the local server in that case.
+const API = (location.protocol === "file:" || location.origin === "null")
+  ? "http://localhost:8000" : "";
 
 const sevColor = {CRITICAL:"bg-red-500/20 text-red-300 border-red-500/40",
                   HIGH:"bg-orange-500/20 text-orange-300 border-orange-500/40",
@@ -107,10 +111,13 @@ function findingRow(f, showResult){
   if (showResult){
     let verified = "";
     if (f.decision === "REMOVE"){
+      const isOcr = f.meta && f.meta.ocr;
+      const okTxt = isOcr ? "✓ OCR-verified (visual)" : "✓ byte-verified removed";
+      const noTxt = isOcr ? "✗ still legible" : "✗ still present";
       verified = f.removed === true
-        ? badge("✓ byte-verified removed","bg-emerald-600/30 text-emerald-100 border-emerald-500/40")
+        ? badge(okTxt,"bg-emerald-600/30 text-emerald-100 border-emerald-500/40")
         : (f.removed === false
-            ? badge("✗ still present","bg-red-600/40 text-red-100 border-red-500/50")
+            ? badge(noTxt,"bg-red-600/40 text-red-100 border-red-500/50")
             : badge("— not verified","border-gray-700 text-gray-400"));
     }
     right = `<div class="flex items-center gap-2 justify-end">${decisionSelect(f)} ${verified}</div>`;
@@ -139,7 +146,7 @@ $("analyzeBtn").onclick = async () => {
   $("analyzeBtn").disabled = true;
   try {
     const fd = new FormData(); fd.append("file", file);
-    const r = await fetch("/analyze", {method:"POST", body:fd});
+    const r = await fetch(API + "/analyze", {method:"POST", body:fd});
     if (!r.ok){ throw new Error((await r.json()).detail || r.statusText); }
     const data = await r.json();
     sessionId = data.session_id;
@@ -161,7 +168,7 @@ async function runSanitize(overrides){
     if (overrides) body.overrides = overrides;
     body.style = (document.querySelector('input[name="style"]:checked')||{}).value || "token";
     body.custom_terms = $("customTerms").value.split("\n").map(s=>s.trim()).filter(Boolean);
-    const r = await fetch("/sanitize", {
+    const r = await fetch(API + "/sanitize", {
       method:"POST", headers:{"content-type":"application/json"},
       body: JSON.stringify(body)
     });
@@ -176,7 +183,7 @@ async function runSanitize(overrides){
       </div>`).join("");
     $("bulkDecisionSelect").value = "";
     const dl = $("download");
-    dl.href = data.download_url; dl.classList.remove("hidden");
+    dl.href = API + data.download_url; dl.classList.remove("hidden");
     $("judgeBadge").textContent = data.judge.available ? "Remote audit: performed" : "Remote audit: not performed";
     $("resultCard").classList.remove("hidden");
     $("status").textContent = "Done. Removed items are marked byte-verified — not a checkmark we drew.";
