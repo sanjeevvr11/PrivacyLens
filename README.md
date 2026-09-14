@@ -43,31 +43,51 @@ Final Report + Verified Safe Download
 
 ## 🛡️ Supported Exposure Vectors
 
-- **DOCX / Word Documents:**
-  - Revision author & editor identity (`docProps/core.xml`)
-  - Application & company fingerprints (`docProps/app.xml`)
-  - Hidden review comments & author signatures (`word/comments.xml`)
-  - Tracked changes / deletions (`w:del`, `w:ins`)
-  - Embedded objects & attachments (`word/embeddings/*`)
-  - Body & header/footer PII: Names, Postal Addresses, Emails, Phone numbers
-- **PDF Documents:**
-  - DocInfo author, creator, and producer metadata
-  - XMP metadata packets
-  - Fake redactions (text underlying opaque black boxes / rectangles)
-  - Annotations & popup comments
-  - Embedded / attached files & document-level JavaScript
-  - Interactive AcroForm field values
-- **Images (JPEG):**
-  - EXIF tags & camera serial identifiers
-  - GPS latitude & longitude coordinates
-  - **Embedded EXIF thumbnails** (often reveal the original uncropped photo!)
-- **Checksum-Validated & Structured PII:**
-  - Person Names (spaCy NER + honorifics + field prefixes)
-  - Postal & Street Addresses (US, Indian PIN, UK formats)
-  - Emails & Phone Numbers
-  - Indian Aadhaar (Verhoeff checksum-validated)
-  - Indian PAN Numbers
-  - Credit / Debit Cards (Luhn checksum-validated)
+### DOCX / Word Documents
+- Revision author and editor identity (`docProps/core.xml`)
+- Application and company fingerprints (`docProps/app.xml`)
+- Hidden review comments and comment-author metadata (`word/comments.xml`)
+- Tracked changes and deleted text (`w:del`, `w:ins`)
+- Embedded objects and attachments (`word/embeddings/*`)
+- Custom document properties (`docProps/custom.xml`)
+- PII in body, headers, and footers:
+  - person names
+  - postal addresses
+  - emails
+  - phone numbers
+  - cards, Aadhaar, and PAN where checksum/format validation succeeds
+
+### PDF Documents
+- `DocInfo` metadata: author, creator, producer
+- XMP metadata packets
+- Fake redactions: text still present under opaque black rectangles
+- Annotations and popup comments
+- Embedded and attached files
+- Document-level JavaScript
+- Interactive form field values
+- Embedded images
+- Body-text PII:
+  - person names
+  - postal addresses
+  - emails
+  - phone numbers
+  - cards, Aadhaar, and PAN where checksum/format validation succeeds
+
+### Raster Images — JPEG / PNG
+- EXIF metadata, including camera, device, and software fingerprints where present
+- Embedded EXIF thumbnails, which can preserve a copy of the original image even after cropping or editing
+- Optional OCR-based detection of printed text in photos, scans, and screenshots
+- OCR-detected PII: names, addresses, emails, phones, Aadhaar, PAN, cards, and custom terms
+- Image sanitization by rebuilding the image and painting over detected regions
+- Independent re-OCR verification for visual redactions
+
+### Checksum-Validated & Structured PII
+- Person names — optional spaCy NER plus honorific, prefix, and layout heuristics
+- Postal addresses — street, PIN / ZIP, and city/state patterns
+- Emails and phone numbers
+- Indian Aadhaar numbers — Verhoeff checksum-validated
+- Indian PAN numbers — format-validated
+- Credit / debit cards — Luhn checksum-validated
 
 ---
 
