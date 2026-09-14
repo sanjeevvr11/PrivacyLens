@@ -61,13 +61,22 @@
     <div id="resultCard" class="card rounded-xl p-6 mb-6 hidden">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 class="text-xl font-semibold">Result</h2>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-2 bg-gray-800/80 border border-gray-700 px-3 py-1.5 rounded-lg">
+            <label for="bulkDecisionSelect" class="text-xs text-gray-300 font-medium whitespace-nowrap">Change all:</label>
+            <select id="bulkDecisionSelect" class="bg-gray-900 border border-gray-600 rounded-md px-2 py-1 text-xs text-gray-100 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer">
+              <option value="" selected disabled>Select action…</option>
+              <option value="WARN">WARN</option>
+              <option value="KEEP">KEEP</option>
+              <option value="REMOVE">REMOVE</option>
+            </select>
+          </div>
           <span id="judgeBadge" class="text-xs px-2 py-1 rounded-full border border-gray-700 text-gray-400"></span>
-          <button id="reapplyBtn" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 font-medium">Re-apply my decisions</button>
-          <a id="download" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium hidden" download>Download safe file</a>
+          <button id="reapplyBtn" class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 font-medium text-sm">Re-apply my decisions</button>
+          <a id="download" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium text-sm hidden" download>Download safe file</a>
         </div>
       </div>
-      <p class="text-xs text-gray-500 mb-3">Intent sets each decision automatically. Change any dropdown and click <span class="text-amber-400">Re-apply my decisions</span> to override. Under <span class="text-gray-300">Legal hold</span>, removals stay blocked.</p>
+      <p class="text-xs text-gray-500 mb-3">Intent sets each decision automatically. Use <span class="text-gray-300">Change all</span> or individual dropdowns, then click <span class="text-amber-400 font-medium">Re-apply my decisions</span> to override. Under <span class="text-gray-300">Legal hold</span>, removals stay blocked.</p>
       <div id="result" class="space-y-2"></div>
 
       <h3 class="text-lg font-semibold mt-6 mb-2">Coverage <span class="text-gray-500 text-sm font-normal">— what we did and did not check</span></h3>
@@ -165,6 +174,7 @@ async function runSanitize(overrides){
         <span class="text-gray-300"> — ${c.category}</span>
         <div class="text-xs text-gray-500">${c.detail||""}</div>
       </div>`).join("");
+    $("bulkDecisionSelect").value = "";
     const dl = $("download");
     dl.href = data.download_url; dl.classList.remove("hidden");
     $("judgeBadge").textContent = data.judge.available ? "Remote audit: performed" : "Remote audit: not performed";
@@ -179,6 +189,16 @@ $("reapplyBtn").onclick = () => {
   const overrides = {};
   document.querySelectorAll("#result select.decision").forEach(s => { overrides[s.dataset.fid] = s.value; });
   runSanitize(overrides);
+};
+$("bulkDecisionSelect").onchange = (e) => {
+  const val = e.target.value;
+  if (!val) return;
+  const selects = document.querySelectorAll("#result select.decision");
+  selects.forEach(s => { s.value = val; });
+  $("status").textContent = `Changed all ${selects.length} entities to ${val}. Click "Re-apply my decisions" to apply.`;
+  const btn = $("reapplyBtn");
+  btn.classList.add("ring-2", "ring-amber-300");
+  setTimeout(() => btn.classList.remove("ring-2", "ring-amber-300"), 1800);
 };
 </script>
 </body>
